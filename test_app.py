@@ -1,20 +1,47 @@
-
 import pytest
-from app import app, get_db_connection, init_db
+import app as app_module
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     test_database = tmp_path / "test_employees.db"
 
-    monkeypatch.setattr("app.DATABASE", str(test_database))
+    monkeypatch.setattr(
+        app_module, "DATABASE", str(test_database)
+    )
 
-    init_db()
+    monkeypatch.setattr(app_module, "admin_username", "testadmin")
+    monkeypatch.setattr(app_module, "admin_password", "testpassword")
 
-    app.config["TESTING"] = True
+    app_module.app.config.update(
+        TESTING=True,
+        WTF_CSRF_ENABLED=False
+    )
 
-    with app.test_client() as client:
-        yield client
+    app_module.init_db()
+
+    with app_module.app.test_client() as test_client:
+        test_client.post(
+            "/login",
+            data={
+                "username": "testadmin",
+                "password": "testpassword"
+            }
+        )
+
+        yield test_client
+
+
+def test_login_page():
+    with app_module.app.test_client() as test_client:
+        response = test_client.get("/login")
+        assert response.status_code == 200
+
+
+def test_unauthorized_dashboard_redirect():
+    with app_module.app.test_client() as test_client:
+        response = test_client.get("/")
+        assert response.status_code == 302
 
 
 def test_home_page(client):
@@ -60,3 +87,14 @@ def test_delete_employee(client):
     assert response.status_code == 200
     assert b"Rahul" not in response.data
 
+
+def test_logout(client):
+    response = client.post(
+        "/logout",
+        follow_redirects=True
+    )
+
+    assert response.status_code == 200
+
+    dashboard_response = client.get("/")
+    assert dashboard_response.status_code == 302

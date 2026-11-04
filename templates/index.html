@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -38,6 +37,25 @@
         header p {
             color: #cbd5e1;
             margin-top: 5px;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logout-form {
+            margin: 0;
+        }
+
+        .logout-btn {
+            background: #dc2626;
+            padding: 10px 18px;
+        }
+
+        .logout-btn:hover {
+            background: #b91c1c;
         }
 
         .container {
@@ -251,7 +269,22 @@
         <p>Manage your workforce efficiently</p>
     </div>
 
-    <div>Admin Dashboard</div>
+    <div class="header-actions">
+        <div>Admin Dashboard</div>
+
+        <form action="{{ url_for('logout') }}"
+              method="POST"
+              class="logout-form">
+
+            <input type="hidden"
+                   name="csrf_token"
+                   value="{{ csrf_token() }}">
+
+            <button type="submit" class="logout-btn">
+                Logout
+            </button>
+        </form>
+    </div>
 </header>
 
 <div class="container">
@@ -285,6 +318,10 @@
         <form action="{{ url_for('add_employee') }}"
               method="POST"
               class="form-row">
+
+            <input type="hidden"
+                   name="csrf_token"
+                   value="{{ csrf_token() }}">
 
             <input
                 type="text"
@@ -363,6 +400,10 @@
                                     action="{{ url_for('delete_employee', employee_id=employee['id']) }}"
                                     method="POST"
                                     onsubmit="return confirm('Are you sure you want to delete this employee?');">
+
+                                    <input type="hidden"
+                                           name="csrf_token"
+                                           value="{{ csrf_token() }}">
 
                                     <button
                                         type="submit"
