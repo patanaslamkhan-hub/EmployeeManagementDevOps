@@ -98,3 +98,19 @@ def test_logout(client):
 
     dashboard_response = client.get("/")
     assert dashboard_response.status_code == 302
+
+
+def test_employee_profile(client):
+    response = client.get("/employee/1")
+
+    assert response.status_code == 200
+    assert b"Employee Profile" in response.data
+    assert b"Rahul" in response.data
+    assert b"IT" in response.data
+
+
+def test_employee_profile_not_found(client):
+    response = client.get("/employee/999")
+
+    assert response.status_code == 404
+    assert b"Employee not found" in response.data

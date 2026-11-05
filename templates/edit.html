@@ -47,6 +47,11 @@
             font-size: 15px;
         }
 
+        input:focus {
+            outline: none;
+            border-color: #2563eb;
+        }
+
         button {
             background: #2563eb;
             color: white;
@@ -73,18 +78,22 @@
 
 <div class="container">
 
-    <h2>Edit Employee</h2>
+    <h2>Edit Employee Details</h2>
 
     <form method="POST">
 
-        <!-- CSRF Security Token -->
         <input
             type="hidden"
             name="csrf_token"
             value="{{ csrf_token() }}">
 
-        <label>Employee Name</label>
+        <label>Employee ID</label>
+        <input
+            type="text"
+            value="{{ employee['id'] }}"
+            disabled>
 
+        <label>Full Name</label>
         <input
             type="text"
             name="name"
@@ -92,8 +101,28 @@
             maxlength="100"
             required>
 
-        <label>Department</label>
+        <label>Email Address</label>
+        <input
+            type="email"
+            name="email"
+            value="{{ employee['email'] or '' }}"
+            maxlength="150">
 
+        <label>Phone Number</label>
+        <input
+            type="tel"
+            name="phone"
+            value="{{ employee['phone'] or '' }}"
+            maxlength="20">
+
+        <label>Job Designation</label>
+        <input
+            type="text"
+            name="designation"
+            value="{{ employee['designation'] or '' }}"
+            maxlength="100">
+
+        <label>Department</label>
         <input
             type="text"
             name="department"

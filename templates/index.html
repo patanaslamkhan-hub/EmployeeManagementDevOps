@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>Employee Management Dashboard</title>
 
     <style>
@@ -30,14 +29,8 @@
             gap: 10px;
         }
 
-        header h1 {
-            font-size: 25px;
-        }
-
-        header p {
-            color: #cbd5e1;
-            margin-top: 5px;
-        }
+        header h1 { font-size: 25px; }
+        header p { color: #cbd5e1; margin-top: 5px; }
 
         .header-actions {
             display: flex;
@@ -45,18 +38,14 @@
             gap: 15px;
         }
 
-        .logout-form {
-            margin: 0;
-        }
+        .logout-form { margin: 0; }
 
         .logout-btn {
             background: #dc2626;
             padding: 10px 18px;
         }
 
-        .logout-btn:hover {
-            background: #b91c1c;
-        }
+        .logout-btn:hover { background: #b91c1c; }
 
         .container {
             width: 90%;
@@ -64,18 +53,9 @@
             margin: 35px auto;
         }
 
-        .welcome {
-            margin-bottom: 25px;
-        }
-
-        .welcome h2 {
-            font-size: 26px;
-            margin-bottom: 8px;
-        }
-
-        .welcome p {
-            color: #64748b;
-        }
+        .welcome { margin-bottom: 25px; }
+        .welcome h2 { font-size: 26px; margin-bottom: 8px; }
+        .welcome p { color: #64748b; }
 
         .stats {
             display: grid;
@@ -91,15 +71,8 @@
             box-shadow: 0 3px 12px rgba(0,0,0,0.05);
         }
 
-        .stat-card p {
-            color: #64748b;
-            margin-bottom: 12px;
-        }
-
-        .stat-card h2 {
-            font-size: 32px;
-            color: #2563eb;
-        }
+        .stat-card p { color: #64748b; margin-bottom: 12px; }
+        .stat-card h2 { font-size: 32px; color: #2563eb; }
 
         .panel {
             background: white;
@@ -109,10 +82,7 @@
             box-shadow: 0 3px 12px rgba(0,0,0,0.05);
         }
 
-        .panel h3 {
-            margin-bottom: 20px;
-            font-size: 20px;
-        }
+        .panel h3 { margin-bottom: 20px; font-size: 20px; }
 
         .form-row {
             display: flex;
@@ -144,9 +114,7 @@
             font-size: 14px;
         }
 
-        button:hover {
-            background: #1d4ed8;
-        }
+        button:hover { background: #1d4ed8; }
 
         .table-header {
             display: flex;
@@ -157,18 +125,14 @@
             margin-bottom: 20px;
         }
 
-        .search {
-            max-width: 280px;
-        }
+        .search { max-width: 280px; }
 
-        .table-wrapper {
-            overflow-x: auto;
-        }
+        .table-wrapper { overflow-x: auto; }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            min-width: 650px;
+            min-width: 950px;
         }
 
         th, td {
@@ -182,9 +146,7 @@
             color: #475569;
         }
 
-        tr:hover {
-            background: #f8fafc;
-        }
+        tr:hover { background: #f8fafc; }
 
         .badge {
             background: #dbeafe;
@@ -200,14 +162,31 @@
             gap: 8px;
         }
 
+        .action-buttons form {
+            margin: 0;
+        }
+
+        .profile-btn,
         .edit-btn {
             display: inline-block;
-            background: #2563eb;
             color: white;
             padding: 8px 13px;
             border-radius: 5px;
             text-decoration: none;
             font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .profile-btn {
+            background: #059669;
+        }
+
+        .profile-btn:hover {
+            background: #047857;
+        }
+
+        .edit-btn {
+            background: #2563eb;
         }
 
         .edit-btn:hover {
@@ -218,16 +197,23 @@
             background: #dc2626;
             padding: 8px 13px;
             font-size: 13px;
+            white-space: nowrap;
         }
 
-        .delete-btn:hover {
-            background: #b91c1c;
-        }
+        .delete-btn:hover { background: #b91c1c; }
 
         .empty {
             text-align: center;
             padding: 25px;
             color: #64748b;
+        }
+
+        .flash-message {
+            padding: 12px 15px;
+            margin-bottom: 18px;
+            border-radius: 7px;
+            background: #dcfce7;
+            color: #166534;
         }
 
         footer {
@@ -237,26 +223,12 @@
         }
 
         @media (max-width: 600px) {
-            .container {
-                width: 94%;
-            }
-
-            header h1 {
-                font-size: 20px;
-            }
-
-            .panel {
-                padding: 17px;
-            }
-
-            .form-row {
-                flex-direction: column;
-            }
-
+            .container { width: 94%; }
+            header h1 { font-size: 20px; }
+            .panel { padding: 17px; }
+            .form-row { flex-direction: column; }
             .form-row input,
-            .form-row button {
-                width: 100%;
-            }
+            .form-row button { width: 100%; }
         }
     </style>
 </head>
@@ -272,32 +244,27 @@
     <div class="header-actions">
         <div>Admin Dashboard</div>
 
-        <form action="{{ url_for('logout') }}"
-              method="POST"
-              class="logout-form">
-
-            <input type="hidden"
-                   name="csrf_token"
-                   value="{{ csrf_token() }}">
-
-            <button type="submit" class="logout-btn">
-                Logout
-            </button>
+        <form action="{{ url_for('logout') }}" method="POST" class="logout-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="logout-btn">Logout</button>
         </form>
     </div>
 </header>
 
 <div class="container">
 
-    <!-- Dashboard Overview -->
     <section class="welcome">
         <h2>Dashboard Overview</h2>
         <p>Welcome! Manage your employee information in one place.</p>
     </section>
 
-    <!-- Statistics -->
-    <section class="stats">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+            <div class="flash-message">{{ message }}</div>
+        {% endfor %}
+    {% endwith %}
 
+    <section class="stats">
         <div class="stat-card">
             <p>Total Employees</p>
             <h2>{{ employees | length }}</h2>
@@ -307,79 +274,68 @@
             <p>Total Departments</p>
             <h2>{{ employees | map(attribute='department') | unique | list | length }}</h2>
         </div>
-
     </section>
 
     <!-- Add Employee -->
     <section class="panel">
-
         <h3>+ Add New Employee</h3>
 
-        <form action="{{ url_for('add_employee') }}"
-              method="POST"
-              class="form-row">
+        <form action="{{ url_for('add_employee') }}" method="POST" class="form-row">
 
-            <input type="hidden"
-                   name="csrf_token"
-                   value="{{ csrf_token() }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-            <input
-                type="text"
-                name="name"
-                placeholder="Enter employee name"
-                maxlength="100"
-                required>
+            <input type="text" name="name"
+                   placeholder="Full Name" maxlength="100" required>
 
-            <input
-                type="text"
-                name="department"
-                placeholder="Enter department"
-                maxlength="100"
-                required>
+            <input type="email" name="email"
+                   placeholder="Email Address" maxlength="150">
+
+            <input type="tel" name="phone"
+                   placeholder="Phone Number" maxlength="20">
+
+            <input type="text" name="designation"
+                   placeholder="Job Designation" maxlength="100">
+
+            <input type="text" name="department"
+                   placeholder="Department" maxlength="100" required>
 
             <button type="submit">Add Employee</button>
-
         </form>
-
     </section>
 
     <!-- Employee Directory -->
     <section class="panel">
 
         <div class="table-header">
-
             <h3>Employee Directory</h3>
 
-            <input
-                type="text"
-                id="searchInput"
-                class="search"
-                placeholder="Search employees...">
-
+            <input type="text" id="searchInput"
+                   class="search" placeholder="Search employees...">
         </div>
 
         <div class="table-wrapper">
-
             <table>
-
                 <thead>
                     <tr>
                         <th>Employee ID</th>
                         <th>Employee Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Designation</th>
                         <th>Department</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
 
                 <tbody id="employeeTable">
-
                     {% for employee in employees %}
-
                     <tr class="employee-row">
 
                         <td>{{ employee['id'] }}</td>
-
                         <td>{{ employee['name'] }}</td>
+                        <td>{{ employee['email'] or '-' }}</td>
+                        <td>{{ employee['phone'] or '-' }}</td>
+                        <td>{{ employee['designation'] or '-' }}</td>
 
                         <td>
                             <span class="badge">
@@ -390,12 +346,21 @@
                         <td>
                             <div class="action-buttons">
 
+                                <!-- Employee Profile -->
+                                <a
+                                    href="{{ url_for('employee_profile', employee_id=employee['id']) }}"
+                                    class="profile-btn">
+                                    Profile
+                                </a>
+
+                                <!-- Edit Employee -->
                                 <a
                                     href="{{ url_for('edit_employee', employee_id=employee['id']) }}"
                                     class="edit-btn">
                                     Edit
                                 </a>
 
+                                <!-- Delete Employee -->
                                 <form
                                     action="{{ url_for('delete_employee', employee_id=employee['id']) }}"
                                     method="POST"
@@ -405,33 +370,24 @@
                                            name="csrf_token"
                                            value="{{ csrf_token() }}">
 
-                                    <button
-                                        type="submit"
-                                        class="delete-btn">
+                                    <button type="submit" class="delete-btn">
                                         Delete
                                     </button>
-
                                 </form>
 
                             </div>
                         </td>
-
                     </tr>
 
                     {% else %}
-
                     <tr>
-                        <td colspan="4" class="empty">
+                        <td colspan="7" class="empty">
                             No employees found.
                         </td>
                     </tr>
-
                     {% endfor %}
-
                 </tbody>
-
             </table>
-
         </div>
 
         <p id="noResults" class="empty" style="display:none;">
@@ -439,30 +395,23 @@
         </p>
 
     </section>
-
 </div>
 
 <footer>
     Employee Management System | DevOps Project
 </footer>
 
-<!-- Employee Search -->
 <script>
-
     const searchInput = document.getElementById("searchInput");
     const employeeRows = document.querySelectorAll(".employee-row");
     const noResults = document.getElementById("noResults");
 
     searchInput.addEventListener("input", function () {
-
         const searchValue = this.value.toLowerCase().trim();
-
         let visibleCount = 0;
 
         employeeRows.forEach(function (row) {
-
             const employeeData = row.innerText.toLowerCase();
-
             const matches = employeeData.includes(searchValue);
 
             row.style.display = matches ? "" : "none";
@@ -470,16 +419,13 @@
             if (matches) {
                 visibleCount++;
             }
-
         });
 
         noResults.style.display =
             employeeRows.length > 0 && visibleCount === 0
                 ? "block"
                 : "none";
-
     });
-
 </script>
 
 </body>

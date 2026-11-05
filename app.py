@@ -1,4 +1,3 @@
-
 import os
 import sqlite3
 from functools import wraps
@@ -50,6 +49,7 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
 
+    # Create employee table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS employees (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,6 +58,7 @@ def init_db():
         )
     """)
 
+    # Create admin table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS admins (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +67,27 @@ def init_db():
         )
     """)
 
-    # Create the initial admin only if the username does not exist.
+    # Safely add new employee columns
+    existing_columns = {
+        row["name"]
+        for row in conn.execute(
+            "PRAGMA table_info(employees)"
+        ).fetchall()
+    }
+
+    new_columns = {
+        "email": "TEXT",
+        "phone": "TEXT",
+        "designation": "TEXT"
+    }
+
+    for column_name, column_type in new_columns.items():
+        if column_name not in existing_columns:
+            conn.execute(
+                f"ALTER TABLE employees ADD COLUMN {column_name} {column_type}"
+            )
+
+    # Create initial admin only if the username does not exist
     existing_admin = conn.execute(
         "SELECT id FROM admins WHERE username = ?",
         (admin_username,)
@@ -78,7 +99,7 @@ def init_db():
             (admin_username, generate_password_hash(admin_password))
         )
 
-    # Add sample employees only when the employee table is empty.
+    # Add sample employees only when the employee table is empty
     count = conn.execute(
         "SELECT COUNT(*) FROM employees"
     ).fetchone()[0]
@@ -142,9 +163,11 @@ def logout():
 @admin_required
 def home():
     conn = get_db_connection()
+
     employees = conn.execute(
         "SELECT * FROM employees ORDER BY id"
     ).fetchall()
+
     conn.close()
 
     return render_template(
@@ -159,15 +182,26 @@ def home():
 def add_employee():
     name = request.form.get("name", "").strip()
     department = request.form.get("department", "").strip()
+    email = request.form.get("email", "").strip()
+    phone = request.form.get("phone", "").strip()
+    designation = request.form.get("designation", "").strip()
 
     if name and department:
         conn = get_db_connection()
+
         conn.execute(
-            "INSERT INTO employees (name, department) VALUES (?, ?)",
-            (name, department)
+            """
+            INSERT INTO employees
+            (name, department, email, phone, designation)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (name, department, email, phone, designation)
         )
+
         conn.commit()
         conn.close()
+
+        flash("Employee added successfully.", "success")
 
     return redirect(url_for("home"))
 
@@ -189,30 +223,67 @@ def edit_employee(employee_id):
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         department = request.form.get("department", "").strip()
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+        designation = request.form.get("designation", "").strip()
 
         if name and department:
             conn.execute(
-                "UPDATE employees SET name = ?, department = ? WHERE id = ?",
-                (name, department, employee_id)
+                """
+                UPDATE employees
+                SET name = ?, department = ?, email = ?,
+                    phone = ?, designation = ?
+                WHERE id = ?
+                """,
+                (
+                    name, department, email,
+                    phone, designation, employee_id
+                )
             )
+
             conn.commit()
             conn.close()
+
+            flash("Employee updated successfully.", "success")
             return redirect(url_for("home"))
 
     conn.close()
+
     return render_template("edit.html", employee=employee)
+
+
+@app.route("/employee/<int:employee_id>")
+@admin_required
+def employee_profile(employee_id):
+    conn = get_db_connection()
+
+    employee = conn.execute(
+        "SELECT * FROM employees WHERE id = ?",
+        (employee_id,)
+    ).fetchone()
+
+    conn.close()
+
+    if employee is None:
+        return "Employee not found", 404
+
+    return render_template("profile.html", employee=employee)
 
 
 @app.route("/delete/<int:employee_id>", methods=["POST"])
 @admin_required
 def delete_employee(employee_id):
     conn = get_db_connection()
+
     conn.execute(
         "DELETE FROM employees WHERE id = ?",
         (employee_id,)
     )
+
     conn.commit()
     conn.close()
+
+    flash("Employee deleted successfully.", "success")
 
     return redirect(url_for("home"))
 
