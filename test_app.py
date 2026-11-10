@@ -114,3 +114,15 @@ def test_employee_profile_not_found(client):
 
     assert response.status_code == 404
     assert b"Employee not found" in response.data
+
+
+def test_export_employees_csv(client):
+    response = client.get("/export")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/csv"
+    assert "attachment; filename=employees.csv" in response.headers["Content-Disposition"]
+
+    assert b"Employee ID,Full Name,Email,Phone,Job Designation,Department" in response.data
+    assert b"Rahul" in response.data
+    assert b"Priya" in response.data

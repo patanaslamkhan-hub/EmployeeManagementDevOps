@@ -1,11 +1,14 @@
+
 import os
+import csv
 import sqlite3
+from io import StringIO
 from functools import wraps
 
 from dotenv import load_dotenv
 from flask import (
     Flask, render_template, request, redirect,
-    url_for, session, flash
+    url_for, session, flash, Response
 )
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -268,6 +271,53 @@ def employee_profile(employee_id):
         return "Employee not found", 404
 
     return render_template("profile.html", employee=employee)
+
+
+# Export employee records to CSV
+@app.route("/export")
+@admin_required
+def export_employees():
+    conn = get_db_connection()
+
+    employees = conn.execute(
+        """
+        SELECT id, name, email, phone, designation, department
+        FROM employees
+        ORDER BY id
+        """
+    ).fetchall()
+
+    conn.close()
+
+    output = StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "Employee ID",
+        "Full Name",
+        "Email",
+        "Phone",
+        "Job Designation",
+        "Department"
+    ])
+
+    for employee in employees:
+        writer.writerow([
+            employee["id"],
+            employee["name"],
+            employee["email"] or "",
+            employee["phone"] or "",
+            employee["designation"] or "",
+            employee["department"]
+        ])
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=employees.csv"
+        }
+    )
 
 
 @app.route("/delete/<int:employee_id>", methods=["POST"])
