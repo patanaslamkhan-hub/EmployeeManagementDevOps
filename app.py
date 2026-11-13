@@ -43,7 +43,7 @@ DATABASE = os.path.join(BASE_DIR, "data", "employees.db")
 
 def get_db_connection():
     os.makedirs(os.path.dirname(DATABASE), exist_ok=True)
-    conn = sqlite3.connect(DATABASE)
+    conn = sqlite3.connect(DATABASE, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -52,6 +52,9 @@ def init_db():
     conn = get_db_connection()
 
     try:
+        # Serialize database initialization across Gunicorn workers
+        conn.execute("BEGIN IMMEDIATE")
+
         # Create employee table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS employees (
@@ -70,7 +73,7 @@ def init_db():
             )
         """)
 
-        # Safely add new employee columns
+        # Check existing employee columns
         existing_columns = {
             row["name"]
             for row in conn.execute(
@@ -78,6 +81,7 @@ def init_db():
             ).fetchall()
         }
 
+        # Add missing employee columns
         new_columns = {
             "email": "TEXT",
             "phone": "TEXT",
@@ -90,19 +94,19 @@ def init_db():
                     f"ALTER TABLE employees ADD COLUMN {column_name} {column_type}"
                 )
 
-        # Create initial admin only if the username does not exist
-        existing_admin = conn.execute(
-            "SELECT id FROM admins WHERE username = ?",
-            (admin_username,)
-        ).fetchone()
-
-        if existing_admin is None:
-            conn.execute(
-                "INSERT INTO admins (username, password_hash) VALUES (?, ?)",
-                (admin_username, generate_password_hash(admin_password))
+        # Insert admin only if the username does not already exist
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO admins (username, password_hash)
+            VALUES (?, ?)
+            """,
+            (
+                admin_username,
+                generate_password_hash(admin_password)
             )
+        )
 
-        # Add sample employees only when the employee table is empty
+        # Add sample employees only when the table is empty
         count = conn.execute(
             "SELECT COUNT(*) FROM employees"
         ).fetchone()[0]
@@ -110,10 +114,17 @@ def init_db():
         if count == 0:
             conn.executemany(
                 "INSERT INTO employees (name, department) VALUES (?, ?)",
-                [("Rahul", "IT"), ("Priya", "HR")]
+                [
+                    ("Rahul", "IT"),
+                    ("Priya", "HR")
+                ]
             )
 
         conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
 
     finally:
         conn.close()
@@ -124,6 +135,7 @@ def admin_required(view_function):
     def decorated_function(*args, **kwargs):
         if "admin_id" not in session:
             return redirect(url_for("login"))
+
         return view_function(*args, **kwargs)
 
     return decorated_function
@@ -139,6 +151,7 @@ def login():
         password = request.form.get("password", "")
 
         conn = get_db_connection()
+
         try:
             admin = conn.execute(
                 "SELECT * FROM admins WHERE username = ?",
@@ -147,10 +160,13 @@ def login():
         finally:
             conn.close()
 
-        if admin and check_password_hash(admin["password_hash"], password):
+        if admin and check_password_hash(
+            admin["password_hash"], password
+        ):
             session.clear()
             session["admin_id"] = admin["id"]
             session["admin_username"] = admin["username"]
+
             return redirect(url_for("home"))
 
         flash("Invalid username or password.", "error")
@@ -163,6 +179,7 @@ def login():
 def logout():
     session.clear()
     flash("You have been logged out.", "success")
+
     return redirect(url_for("login"))
 
 
@@ -206,7 +223,9 @@ def add_employee():
                 """,
                 (name, department, email, phone, designation)
             )
+
             conn.commit()
+
         finally:
             conn.close()
 
@@ -245,13 +264,19 @@ def edit_employee(employee_id):
                     WHERE id = ?
                     """,
                     (
-                        name, department, email,
-                        phone, designation, employee_id
+                        name,
+                        department,
+                        email,
+                        phone,
+                        designation,
+                        employee_id
                     )
                 )
+
                 conn.commit()
 
                 flash("Employee updated successfully.", "success")
+
                 return redirect(url_for("home"))
 
     finally:
@@ -337,11 +362,14 @@ def delete_employee(employee_id):
             "DELETE FROM employees WHERE id = ?",
             (employee_id,)
         )
+
         conn.commit()
+
     finally:
         conn.close()
 
     flash("Employee deleted successfully.", "success")
+
     return redirect(url_for("home"))
 
 
