@@ -1,9 +1,9 @@
-
 import os
 import csv
 import sqlite3
 from io import StringIO
 from functools import wraps
+from datetime import date
 
 from dotenv import load_dotenv
 from flask import (
@@ -13,10 +13,12 @@ from flask import (
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 
+
 # Load local environment variables
 load_dotenv()
 
 app = Flask(__name__)
+
 
 # Security configuration
 secret_key = os.environ.get("SECRET_KEY")
@@ -36,6 +38,7 @@ app.config["SESSION_COOKIE_SECURE"] = (
 )
 
 csrf = CSRFProtect(app)
+
 
 # Database configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -86,6 +89,7 @@ def get_db_connection():
     os.makedirs(os.path.dirname(DATABASE), exist_ok=True)
     conn = sqlite3.connect(DATABASE, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -106,6 +110,21 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 department TEXT NOT NULL
+            )
+        """)
+
+        # Attendance records: one entry per employee per date
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS attendance (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id INTEGER NOT NULL,
+                attendance_date TEXT NOT NULL,
+                status TEXT NOT NULL
+                    CHECK (status IN ('Present', 'Absent', 'Leave')),
+                remarks TEXT,
+                UNIQUE (employee_id, attendance_date),
+                FOREIGN KEY (employee_id)
+                    REFERENCES employees(id) ON DELETE CASCADE
             )
         """)
 
@@ -182,6 +201,7 @@ def init_postgres_db():
         # Prevent simultaneous Gunicorn workers from initializing together
         conn.execute("SELECT pg_advisory_xact_lock(48291017)")
 
+        # Create employees table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS employees (
                 id BIGSERIAL PRIMARY KEY,
@@ -193,6 +213,7 @@ def init_postgres_db():
             )
         """)
 
+        # Create admins table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS admins (
                 id BIGSERIAL PRIMARY KEY,
@@ -201,11 +222,27 @@ def init_postgres_db():
             )
         """)
 
+        # Create attendance table for PostgreSQL
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS attendance (
+                id BIGSERIAL PRIMARY KEY,
+                employee_id BIGINT NOT NULL
+                    REFERENCES employees(id) ON DELETE CASCADE,
+                attendance_date DATE NOT NULL,
+                status TEXT NOT NULL
+                    CHECK (status IN ('Present', 'Absent', 'Leave')),
+                remarks TEXT,
+                UNIQUE (employee_id, attendance_date)
+            )
+        """)
+
+        # Add missing employee columns
         for column in ("email", "phone", "designation"):
             conn.execute(
                 f"ALTER TABLE employees ADD COLUMN IF NOT EXISTS {column} TEXT"
             )
 
+        # Insert admin if missing
         conn.execute(
             """
             INSERT INTO admins (username, password_hash)
@@ -218,6 +255,7 @@ def init_postgres_db():
             )
         )
 
+        # Add sample employees only when the table is empty
         count = conn.execute(
             "SELECT COUNT(*) AS total FROM employees"
         ).fetchone()["total"]
@@ -488,6 +526,156 @@ def delete_employee(employee_id):
     flash("Employee deleted successfully.", "success")
 
     return redirect(url_for("home"))
+
+
+# ============================================================
+# EMPLOYEE ATTENDANCE ROUTES
+# ============================================================
+
+@app.route("/attendance", methods=["GET"])
+@admin_required
+def attendance():
+    selected_date = request.args.get(
+        "date", date.today().isoformat()
+    ).strip()
+
+    try:
+        selected_date = date.fromisoformat(selected_date).isoformat()
+    except ValueError:
+        flash("Invalid attendance date.", "error")
+        return redirect(url_for("attendance"))
+
+    conn = get_db_connection()
+
+    try:
+        employees = conn.execute(
+            """
+            SELECT
+                e.id,
+                e.name,
+                e.department,
+                a.status,
+                a.remarks
+            FROM employees AS e
+            LEFT JOIN attendance AS a
+                ON a.employee_id = e.id
+                AND a.attendance_date = ?
+            ORDER BY e.id
+            """,
+            (selected_date,)
+        ).fetchall()
+
+    finally:
+        conn.close()
+
+    stats = {
+        "total": len(employees),
+        "present": sum(
+            row["status"] == "Present" for row in employees
+        ),
+        "absent": sum(
+            row["status"] == "Absent" for row in employees
+        ),
+        "leave": sum(
+            row["status"] == "Leave" for row in employees
+        )
+    }
+
+    return render_template(
+        "attendance.html",
+        employees=employees,
+        selected_date=selected_date,
+        stats=stats
+    )
+
+
+@app.route("/attendance/mark", methods=["POST"])
+@admin_required
+def mark_attendance():
+    employee_id_text = request.form.get(
+        "employee_id", ""
+    ).strip()
+
+    attendance_date_text = request.form.get(
+        "attendance_date", ""
+    ).strip()
+
+    status = request.form.get("status", "").strip()
+    remarks = request.form.get("remarks", "").strip()
+
+    try:
+        employee_id = int(employee_id_text)
+
+        if employee_id <= 0:
+            raise ValueError("Invalid employee ID")
+
+        attendance_date = date.fromisoformat(
+            attendance_date_text
+        ).isoformat()
+
+    except ValueError:
+        flash("Invalid employee or attendance date.", "error")
+        return redirect(url_for("attendance"))
+
+    if status not in {"Present", "Absent", "Leave"}:
+        flash("Please select a valid attendance status.", "error")
+        return redirect(
+            url_for("attendance", date=attendance_date)
+        )
+
+    if len(remarks) > 250:
+        flash("Remarks must be 250 characters or fewer.", "error")
+        return redirect(
+            url_for("attendance", date=attendance_date)
+        )
+
+    conn = get_db_connection()
+
+    try:
+        employee = conn.execute(
+            "SELECT id FROM employees WHERE id = ?",
+            (employee_id,)
+        ).fetchone()
+
+        if employee is None:
+            flash("Employee not found.", "error")
+            return redirect(
+                url_for("attendance", date=attendance_date)
+            )
+
+        # Insert or update attendance for the selected date
+        conn.execute(
+            """
+            INSERT INTO attendance
+                (employee_id, attendance_date, status, remarks)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (employee_id, attendance_date)
+            DO UPDATE SET
+                status = excluded.status,
+                remarks = excluded.remarks
+            """,
+            (
+                employee_id,
+                attendance_date,
+                status,
+                remarks
+            )
+        )
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
+
+    flash("Attendance saved successfully.", "success")
+
+    return redirect(
+        url_for("attendance", date=attendance_date)
+    )
 
 
 # Initialize database when Flask/Gunicorn imports this module

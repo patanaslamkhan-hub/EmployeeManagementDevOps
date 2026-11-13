@@ -607,12 +607,15 @@
             <p>Management System</p>
         </div>
 
-        <nav class="navigation" aria-label="Main navigation">
-            <a href="#overview" class="active">Dashboard</a>
-            <a href="#add-employee">Add Employee</a>
-            <a href="#departments">Departments</a>
-            <a href="#directory">Employee Directory</a>
-        </nav>
+        
+<nav class="navigation" aria-label="Main navigation">
+    <a href="#overview" class="active">Dashboard</a>
+    <a href="#add-employee">Add Employee</a>
+    <a href="#departments">Departments</a>
+    <a href="#directory">Employee Directory</a>
+    <a href="{{ url_for('attendance') }}">Employee Attendance</a>
+</nav>
+
 
         <div class="sidebar-bottom">
             Employee Management System
