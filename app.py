@@ -1,3 +1,4 @@
+
 import os
 import csv
 import sqlite3
@@ -39,9 +40,49 @@ csrf = CSRFProtect(app)
 # Database configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.path.join(BASE_DIR, "data", "employees.db")
+DEFAULT_DATABASE = DATABASE
+
+
+def use_postgres():
+    # A monkeypatched DATABASE path keeps existing SQLite tests isolated.
+    return bool(os.environ.get("DATABASE_URL")) and DATABASE == DEFAULT_DATABASE
+
+
+class PostgresConnection:
+    """Compatibility layer for existing SQLite-style route queries."""
+
+    def __init__(self, connection):
+        self.connection = connection
+
+    def execute(self, query, parameters=()):
+        return self.connection.execute(query.replace("?", "%s"), parameters)
+
+    def executemany(self, query, parameters):
+        with self.connection.cursor() as cursor:
+            cursor.executemany(query.replace("?", "%s"), parameters)
+
+    def commit(self):
+        self.connection.commit()
+
+    def rollback(self):
+        self.connection.rollback()
+
+    def close(self):
+        self.connection.close()
 
 
 def get_db_connection():
+    if use_postgres():
+        import psycopg
+        from psycopg.rows import dict_row
+
+        connection = psycopg.connect(
+            os.environ["DATABASE_URL"],
+            row_factory=dict_row,
+            connect_timeout=15
+        )
+        return PostgresConnection(connection)
+
     os.makedirs(os.path.dirname(DATABASE), exist_ok=True)
     conn = sqlite3.connect(DATABASE, timeout=30)
     conn.row_factory = sqlite3.Row
@@ -49,10 +90,14 @@ def get_db_connection():
 
 
 def init_db():
+    if use_postgres():
+        init_postgres_db()
+        return
+
     conn = get_db_connection()
 
     try:
-        # Serialize database initialization across Gunicorn workers
+        # Serialize initialization across Gunicorn workers
         conn.execute("BEGIN IMMEDIATE")
 
         # Create employee table
@@ -110,6 +155,72 @@ def init_db():
         count = conn.execute(
             "SELECT COUNT(*) FROM employees"
         ).fetchone()[0]
+
+        if count == 0:
+            conn.executemany(
+                "INSERT INTO employees (name, department) VALUES (?, ?)",
+                [
+                    ("Rahul", "IT"),
+                    ("Priya", "HR")
+                ]
+            )
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
+
+
+def init_postgres_db():
+    conn = get_db_connection()
+
+    try:
+        # Prevent simultaneous Gunicorn workers from initializing together
+        conn.execute("SELECT pg_advisory_xact_lock(48291017)")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS employees (
+                id BIGSERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                department TEXT NOT NULL,
+                email TEXT,
+                phone TEXT,
+                designation TEXT
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS admins (
+                id BIGSERIAL PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL
+            )
+        """)
+
+        for column in ("email", "phone", "designation"):
+            conn.execute(
+                f"ALTER TABLE employees ADD COLUMN IF NOT EXISTS {column} TEXT"
+            )
+
+        conn.execute(
+            """
+            INSERT INTO admins (username, password_hash)
+            VALUES (?, ?)
+            ON CONFLICT (username) DO NOTHING
+            """,
+            (
+                admin_username,
+                generate_password_hash(admin_password)
+            )
+        )
+
+        count = conn.execute(
+            "SELECT COUNT(*) AS total FROM employees"
+        ).fetchone()["total"]
 
         if count == 0:
             conn.executemany(
@@ -221,7 +332,13 @@ def add_employee():
                 (name, department, email, phone, designation)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (name, department, email, phone, designation)
+                (
+                    name,
+                    department,
+                    email,
+                    phone,
+                    designation
+                )
             )
 
             conn.commit()

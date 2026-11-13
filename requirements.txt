@@ -3,3 +3,4 @@ Flask-WTF
 pytest
 python-dotenv
 gunicorn
+psycopg[binary]
