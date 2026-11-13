@@ -1,4 +1,3 @@
-
 import os
 import csv
 import sqlite3
@@ -52,69 +51,72 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
 
-    # Create employee table
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS employees (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            department TEXT NOT NULL
-        )
-    """)
+    try:
+        # Create employee table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS employees (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                department TEXT NOT NULL
+            )
+        """)
 
-    # Create admin table
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS admins (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL
-        )
-    """)
+        # Create admin table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS admins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL
+            )
+        """)
 
-    # Safely add new employee columns
-    existing_columns = {
-        row["name"]
-        for row in conn.execute(
-            "PRAGMA table_info(employees)"
-        ).fetchall()
-    }
+        # Safely add new employee columns
+        existing_columns = {
+            row["name"]
+            for row in conn.execute(
+                "PRAGMA table_info(employees)"
+            ).fetchall()
+        }
 
-    new_columns = {
-        "email": "TEXT",
-        "phone": "TEXT",
-        "designation": "TEXT"
-    }
+        new_columns = {
+            "email": "TEXT",
+            "phone": "TEXT",
+            "designation": "TEXT"
+        }
 
-    for column_name, column_type in new_columns.items():
-        if column_name not in existing_columns:
+        for column_name, column_type in new_columns.items():
+            if column_name not in existing_columns:
+                conn.execute(
+                    f"ALTER TABLE employees ADD COLUMN {column_name} {column_type}"
+                )
+
+        # Create initial admin only if the username does not exist
+        existing_admin = conn.execute(
+            "SELECT id FROM admins WHERE username = ?",
+            (admin_username,)
+        ).fetchone()
+
+        if existing_admin is None:
             conn.execute(
-                f"ALTER TABLE employees ADD COLUMN {column_name} {column_type}"
+                "INSERT INTO admins (username, password_hash) VALUES (?, ?)",
+                (admin_username, generate_password_hash(admin_password))
             )
 
-    # Create initial admin only if the username does not exist
-    existing_admin = conn.execute(
-        "SELECT id FROM admins WHERE username = ?",
-        (admin_username,)
-    ).fetchone()
+        # Add sample employees only when the employee table is empty
+        count = conn.execute(
+            "SELECT COUNT(*) FROM employees"
+        ).fetchone()[0]
 
-    if existing_admin is None:
-        conn.execute(
-            "INSERT INTO admins (username, password_hash) VALUES (?, ?)",
-            (admin_username, generate_password_hash(admin_password))
-        )
+        if count == 0:
+            conn.executemany(
+                "INSERT INTO employees (name, department) VALUES (?, ?)",
+                [("Rahul", "IT"), ("Priya", "HR")]
+            )
 
-    # Add sample employees only when the employee table is empty
-    count = conn.execute(
-        "SELECT COUNT(*) FROM employees"
-    ).fetchone()[0]
+        conn.commit()
 
-    if count == 0:
-        conn.executemany(
-            "INSERT INTO employees (name, department) VALUES (?, ?)",
-            [("Rahul", "IT"), ("Priya", "HR")]
-        )
-
-    conn.commit()
-    conn.close()
+    finally:
+        conn.close()
 
 
 def admin_required(view_function):
@@ -137,11 +139,13 @@ def login():
         password = request.form.get("password", "")
 
         conn = get_db_connection()
-        admin = conn.execute(
-            "SELECT * FROM admins WHERE username = ?",
-            (username,)
-        ).fetchone()
-        conn.close()
+        try:
+            admin = conn.execute(
+                "SELECT * FROM admins WHERE username = ?",
+                (username,)
+            ).fetchone()
+        finally:
+            conn.close()
 
         if admin and check_password_hash(admin["password_hash"], password):
             session.clear()
@@ -167,11 +171,12 @@ def logout():
 def home():
     conn = get_db_connection()
 
-    employees = conn.execute(
-        "SELECT * FROM employees ORDER BY id"
-    ).fetchall()
-
-    conn.close()
+    try:
+        employees = conn.execute(
+            "SELECT * FROM employees ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
 
     return render_template(
         "index.html",
@@ -192,17 +197,18 @@ def add_employee():
     if name and department:
         conn = get_db_connection()
 
-        conn.execute(
-            """
-            INSERT INTO employees
-            (name, department, email, phone, designation)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (name, department, email, phone, designation)
-        )
-
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute(
+                """
+                INSERT INTO employees
+                (name, department, email, phone, designation)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (name, department, email, phone, designation)
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
         flash("Employee added successfully.", "success")
 
@@ -214,43 +220,42 @@ def add_employee():
 def edit_employee(employee_id):
     conn = get_db_connection()
 
-    employee = conn.execute(
-        "SELECT * FROM employees WHERE id = ?",
-        (employee_id,)
-    ).fetchone()
+    try:
+        employee = conn.execute(
+            "SELECT * FROM employees WHERE id = ?",
+            (employee_id,)
+        ).fetchone()
 
-    if employee is None:
-        conn.close()
-        return "Employee not found", 404
+        if employee is None:
+            return "Employee not found", 404
 
-    if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        department = request.form.get("department", "").strip()
-        email = request.form.get("email", "").strip()
-        phone = request.form.get("phone", "").strip()
-        designation = request.form.get("designation", "").strip()
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            department = request.form.get("department", "").strip()
+            email = request.form.get("email", "").strip()
+            phone = request.form.get("phone", "").strip()
+            designation = request.form.get("designation", "").strip()
 
-        if name and department:
-            conn.execute(
-                """
-                UPDATE employees
-                SET name = ?, department = ?, email = ?,
-                    phone = ?, designation = ?
-                WHERE id = ?
-                """,
-                (
-                    name, department, email,
-                    phone, designation, employee_id
+            if name and department:
+                conn.execute(
+                    """
+                    UPDATE employees
+                    SET name = ?, department = ?, email = ?,
+                        phone = ?, designation = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        name, department, email,
+                        phone, designation, employee_id
+                    )
                 )
-            )
+                conn.commit()
 
-            conn.commit()
-            conn.close()
+                flash("Employee updated successfully.", "success")
+                return redirect(url_for("home"))
 
-            flash("Employee updated successfully.", "success")
-            return redirect(url_for("home"))
-
-    conn.close()
+    finally:
+        conn.close()
 
     return render_template("edit.html", employee=employee)
 
@@ -260,12 +265,13 @@ def edit_employee(employee_id):
 def employee_profile(employee_id):
     conn = get_db_connection()
 
-    employee = conn.execute(
-        "SELECT * FROM employees WHERE id = ?",
-        (employee_id,)
-    ).fetchone()
-
-    conn.close()
+    try:
+        employee = conn.execute(
+            "SELECT * FROM employees WHERE id = ?",
+            (employee_id,)
+        ).fetchone()
+    finally:
+        conn.close()
 
     if employee is None:
         return "Employee not found", 404
@@ -279,15 +285,16 @@ def employee_profile(employee_id):
 def export_employees():
     conn = get_db_connection()
 
-    employees = conn.execute(
-        """
-        SELECT id, name, email, phone, designation, department
-        FROM employees
-        ORDER BY id
-        """
-    ).fetchall()
-
-    conn.close()
+    try:
+        employees = conn.execute(
+            """
+            SELECT id, name, email, phone, designation, department
+            FROM employees
+            ORDER BY id
+            """
+        ).fetchall()
+    finally:
+        conn.close()
 
     output = StringIO()
     writer = csv.writer(output)
@@ -325,19 +332,22 @@ def export_employees():
 def delete_employee(employee_id):
     conn = get_db_connection()
 
-    conn.execute(
-        "DELETE FROM employees WHERE id = ?",
-        (employee_id,)
-    )
-
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(
+            "DELETE FROM employees WHERE id = ?",
+            (employee_id,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
     flash("Employee deleted successfully.", "success")
-
     return redirect(url_for("home"))
 
 
+# Initialize database when Flask/Gunicorn imports this module
+init_db()
+
+
 if __name__ == "__main__":
-    init_db()
     app.run(host="0.0.0.0", port=5000, debug=False)
