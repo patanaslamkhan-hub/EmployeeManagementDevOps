@@ -1,0 +1,632 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Employee Leave Management</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6fb;
+            color: #1e293b;
+        }
+
+        .navbar {
+            background: #1e293b;
+            color: white;
+            padding: 18px 6%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .navbar h2 {
+            margin: 0;
+            font-size: 22px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            background: #334155;
+            padding: 10px 14px;
+            border-radius: 7px;
+            font-size: 14px;
+        }
+
+        .nav-links a:hover {
+            background: #475569;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .page-title {
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #64748b;
+            margin-bottom: 25px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(180px, 1fr));
+            gap: 18px;
+            margin-bottom: 25px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 22px;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.05);
+        }
+
+        .stat-card h3 {
+            margin: 0 0 12px;
+            color: #64748b;
+            font-size: 15px;
+        }
+
+        .stat-card p {
+            font-size: 30px;
+            font-weight: bold;
+            margin: 0;
+        }
+
+        .total {
+            border-left: 5px solid #2563eb;
+        }
+
+        .pending {
+            border-left: 5px solid #f59e0b;
+        }
+
+        .approved {
+            border-left: 5px solid #16a34a;
+        }
+
+        .rejected {
+            border-left: 5px solid #dc2626;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.05);
+        }
+
+        .card h2 {
+            margin-top: 0;
+            font-size: 21px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(230px, 1fr));
+            gap: 18px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            padding: 11px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            font-size: 14px;
+            background: white;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #2563eb;
+        }
+
+        .reason-group {
+            margin-top: 18px;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 90px;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 7px;
+            padding: 11px 18px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+            margin-top: 20px;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-approve {
+            background: #16a34a;
+            color: white;
+        }
+
+        .btn-reject {
+            background: #dc2626;
+            color: white;
+        }
+
+        .btn-approve:hover {
+            background: #15803d;
+        }
+
+        .btn-reject:hover {
+            background: #b91c1c;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 850px;
+        }
+
+        th,
+        td {
+            padding: 13px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 14px;
+            vertical-align: middle;
+        }
+
+        th {
+            background: #f8fafc;
+            font-weight: bold;
+        }
+
+        tr:hover {
+            background: #f8fafc;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 6px 11px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .status-Pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-Approved {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-Rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 7px;
+        }
+
+        .action-buttons form {
+            margin: 0;
+        }
+
+        .action-buttons .btn {
+            padding: 8px 10px;
+            font-size: 12px;
+        }
+
+        .alert {
+            padding: 13px 16px;
+            border-radius: 7px;
+            margin-bottom: 18px;
+        }
+
+        .alert-success {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 35px;
+            color: #64748b;
+        }
+
+        @media (max-width: 600px) {
+            .navbar {
+                padding: 16px;
+            }
+
+            .container {
+                padding: 0 12px;
+            }
+
+            .card {
+                padding: 18px;
+            }
+
+            .page-title {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Navigation Bar -->
+    <header class="navbar">
+        <h2>Employee Management System</h2>
+
+        <nav class="nav-links">
+            <a href="{{ url_for('home') }}">
+                Dashboard
+            </a>
+
+            <a href="{{ url_for('attendance') }}">
+                Attendance
+            </a>
+
+            <a href="{{ url_for('leave_management') }}">
+                Leave Management
+            </a>
+        </nav>
+    </header>
+
+    <main class="container">
+
+        <h1 class="page-title">
+            Employee Leave Management
+        </h1>
+
+        <p class="subtitle">
+            Apply for leave, review requests,
+            and manage employee leave approvals.
+        </p>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(
+            with_categories=true
+        ) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'success' if category == 'success' else 'error' }}"
+                         role="alert">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Leave Statistics -->
+        <section class="stats">
+
+            <div class="stat-card total">
+                <h3>Total Requests</h3>
+                <p>{{ stats.total }}</p>
+            </div>
+
+            <div class="stat-card pending">
+                <h3>Pending</h3>
+                <p>{{ stats.pending }}</p>
+            </div>
+
+            <div class="stat-card approved">
+                <h3>Approved</h3>
+                <p>{{ stats.approved }}</p>
+            </div>
+
+            <div class="stat-card rejected">
+                <h3>Rejected</h3>
+                <p>{{ stats.rejected }}</p>
+            </div>
+
+        </section>
+
+        <!-- Apply Leave Form -->
+        <section class="card">
+
+            <h2>Apply for Leave</h2>
+
+            <form action="{{ url_for('apply_leave') }}"
+                  method="POST">
+
+                <!-- CSRF Protection -->
+                <input type="hidden"
+                       name="csrf_token"
+                       value="{{ csrf_token() }}">
+
+                <div class="form-grid">
+
+                    <div class="form-group">
+                        <label for="employee_id">
+                            Employee
+                        </label>
+
+                        <select id="employee_id"
+                                name="employee_id"
+                                required>
+
+                            <option value="">
+                                Select Employee
+                            </option>
+
+                            {% for employee in employees %}
+                                <option value="{{ employee.id }}">
+                                    {{ employee.name }}
+                                    ({{ employee.department }})
+                                </option>
+                            {% endfor %}
+
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="leave_type">
+                            Leave Type
+                        </label>
+
+                        <select id="leave_type"
+                                name="leave_type"
+                                required>
+
+                            <option value="">
+                                Select Leave Type
+                            </option>
+
+                            <option value="Sick">
+                                Sick Leave
+                            </option>
+
+                            <option value="Casual">
+                                Casual Leave
+                            </option>
+
+                            <option value="Earned">
+                                Earned Leave
+                            </option>
+
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="start_date">
+                            Start Date
+                        </label>
+
+                        <input type="date"
+                               id="start_date"
+                               name="start_date"
+                               required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="end_date">
+                            End Date
+                        </label>
+
+                        <input type="date"
+                               id="end_date"
+                               name="end_date"
+                               required>
+                    </div>
+
+                </div>
+
+                <div class="form-group reason-group">
+                    <label for="reason">
+                        Reason for Leave
+                    </label>
+
+                    <textarea id="reason"
+                              name="reason"
+                              maxlength="500"
+                              placeholder="Enter reason for leave..."></textarea>
+                </div>
+
+                <button type="submit"
+                        class="btn btn-primary">
+                    Submit Leave Request
+                </button>
+
+            </form>
+
+        </section>
+
+        <!-- Leave Request History -->
+        <section class="card">
+
+            <h2>Leave Request History</h2>
+
+            <div class="table-wrapper">
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Employee</th>
+                            <th>Department</th>
+                            <th>Leave Type</th>
+                            <th>Start Date</th>
+                            <th>End Date</th>
+                            <th>Reason</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+
+                        {% for leave in leave_requests %}
+
+                        <tr>
+                            <td>{{ leave.id }}</td>
+
+                            <td>
+                                {{ leave.employee_name }}
+                            </td>
+
+                            <td>
+                                {{ leave.department }}
+                            </td>
+
+                            <td>
+                                {{ leave.leave_type }}
+                            </td>
+
+                            <td>
+                                {{ leave.start_date }}
+                            </td>
+
+                            <td>
+                                {{ leave.end_date }}
+                            </td>
+
+                            <td>
+                                {{ leave.reason or "-" }}
+                            </td>
+
+                            <td>
+                                <span class="status status-{{ leave.status }}">
+                                    {{ leave.status }}
+                                </span>
+                            </td>
+
+                            <td>
+
+                                {% if leave.status == "Pending" %}
+
+                                <div class="action-buttons">
+
+                                    <!-- Approve Leave -->
+                                    <form action="{{ url_for('update_leave_status', leave_id=leave.id) }}"
+                                          method="POST">
+
+                                        <input type="hidden"
+                                               name="csrf_token"
+                                               value="{{ csrf_token() }}">
+
+                                        <input type="hidden"
+                                               name="status"
+                                               value="Approved">
+
+                                        <button type="submit"
+                                                class="btn btn-approve">
+                                            Approve
+                                        </button>
+                                    </form>
+
+                                    <!-- Reject Leave -->
+                                    <form action="{{ url_for('update_leave_status', leave_id=leave.id) }}"
+                                          method="POST">
+
+                                        <input type="hidden"
+                                               name="csrf_token"
+                                               value="{{ csrf_token() }}">
+
+                                        <input type="hidden"
+                                               name="status"
+                                               value="Rejected">
+
+                                        <button type="submit"
+                                                class="btn btn-reject">
+                                            Reject
+                                        </button>
+                                    </form>
+
+                                </div>
+
+                                {% else %}
+
+                                    <span>Completed</span>
+
+                                {% endif %}
+
+                            </td>
+                        </tr>
+
+                        {% else %}
+
+                        <tr>
+                            <td colspan="9"
+                                class="empty-state">
+                                No leave requests found.
+                            </td>
+                        </tr>
+
+                        {% endfor %}
+
+                    </tbody>
+                </table>
+
+            </div>
+
+        </section>
+
+    </main>
+
+</body>
+</html>
