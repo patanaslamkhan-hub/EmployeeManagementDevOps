@@ -1,3 +1,4 @@
+
 import os
 import csv
 import sqlite3
@@ -20,7 +21,10 @@ load_dotenv()
 app = Flask(__name__)
 
 
-# Security configuration
+# ============================================================
+# SECURITY CONFIGURATION
+# ============================================================
+
 secret_key = os.environ.get("SECRET_KEY")
 admin_username = os.environ.get("ADMIN_USERNAME")
 admin_password = os.environ.get("ADMIN_PASSWORD")
@@ -40,14 +44,17 @@ app.config["SESSION_COOKIE_SECURE"] = (
 csrf = CSRFProtect(app)
 
 
-# Database configuration
+# ============================================================
+# DATABASE CONFIGURATION
+# ============================================================
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.path.join(BASE_DIR, "data", "employees.db")
 DEFAULT_DATABASE = DATABASE
 
 
 def use_postgres():
-    # A monkeypatched DATABASE path keeps existing SQLite tests isolated.
+    # A monkeypatched DATABASE path keeps SQLite tests isolated.
     return bool(os.environ.get("DATABASE_URL")) and DATABASE == DEFAULT_DATABASE
 
 
@@ -93,6 +100,10 @@ def get_db_connection():
     return conn
 
 
+# ============================================================
+# SQLITE DATABASE INITIALIZATION
+# ============================================================
+
 def init_db():
     if use_postgres():
         init_postgres_db()
@@ -123,6 +134,28 @@ def init_db():
                     CHECK (status IN ('Present', 'Absent', 'Leave')),
                 remarks TEXT,
                 UNIQUE (employee_id, attendance_date),
+                FOREIGN KEY (employee_id)
+                    REFERENCES employees(id) ON DELETE CASCADE
+            )
+        """)
+
+        # ====================================================
+        # EMPLOYEE LEAVE MANAGEMENT TABLE (SQLITE)
+        # ====================================================
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS leave_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id INTEGER NOT NULL,
+                leave_type TEXT NOT NULL
+                    CHECK (leave_type IN ('Sick', 'Casual', 'Earned')),
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                reason TEXT,
+                status TEXT NOT NULL DEFAULT 'Pending'
+                    CHECK (status IN ('Pending', 'Approved', 'Rejected')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CHECK (end_date >= start_date),
                 FOREIGN KEY (employee_id)
                     REFERENCES employees(id) ON DELETE CASCADE
             )
@@ -194,6 +227,10 @@ def init_db():
         conn.close()
 
 
+# ============================================================
+# POSTGRESQL DATABASE INITIALIZATION
+# ============================================================
+
 def init_postgres_db():
     conn = get_db_connection()
 
@@ -233,6 +270,27 @@ def init_postgres_db():
                     CHECK (status IN ('Present', 'Absent', 'Leave')),
                 remarks TEXT,
                 UNIQUE (employee_id, attendance_date)
+            )
+        """)
+
+        # ====================================================
+        # EMPLOYEE LEAVE MANAGEMENT TABLE (POSTGRESQL)
+        # ====================================================
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS leave_requests (
+                id BIGSERIAL PRIMARY KEY,
+                employee_id BIGINT NOT NULL
+                    REFERENCES employees(id) ON DELETE CASCADE,
+                leave_type TEXT NOT NULL
+                    CHECK (leave_type IN ('Sick', 'Casual', 'Earned')),
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                reason TEXT,
+                status TEXT NOT NULL DEFAULT 'Pending'
+                    CHECK (status IN ('Pending', 'Approved', 'Rejected')),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CHECK (end_date >= start_date)
             )
         """)
 
@@ -278,6 +336,10 @@ def init_postgres_db():
     finally:
         conn.close()
 
+
+# ============================================================
+# ADMIN AUTHENTICATION
+# ============================================================
 
 def admin_required(view_function):
     @wraps(view_function)
@@ -332,6 +394,10 @@ def logout():
     return redirect(url_for("login"))
 
 
+# ============================================================
+# EMPLOYEE DASHBOARD
+# ============================================================
+
 @app.route("/")
 @admin_required
 def home():
@@ -350,6 +416,10 @@ def home():
         admin_username=session.get("admin_username")
     )
 
+
+# ============================================================
+# ADD EMPLOYEE
+# ============================================================
 
 @app.route("/add", methods=["POST"])
 @admin_required
@@ -388,6 +458,10 @@ def add_employee():
 
     return redirect(url_for("home"))
 
+
+# ============================================================
+# EDIT EMPLOYEE
+# ============================================================
 
 @app.route("/edit/<int:employee_id>", methods=["GET", "POST"])
 @admin_required
@@ -440,6 +514,10 @@ def edit_employee(employee_id):
     return render_template("edit.html", employee=employee)
 
 
+# ============================================================
+# EMPLOYEE PROFILE
+# ============================================================
+
 @app.route("/employee/<int:employee_id>")
 @admin_required
 def employee_profile(employee_id):
@@ -459,7 +537,10 @@ def employee_profile(employee_id):
     return render_template("profile.html", employee=employee)
 
 
-# Export employee records to CSV
+# ============================================================
+# EXPORT EMPLOYEES TO CSV
+# ============================================================
+
 @app.route("/export")
 @admin_required
 def export_employees():
@@ -506,6 +587,10 @@ def export_employees():
         }
     )
 
+
+# ============================================================
+# DELETE EMPLOYEE
+# ============================================================
 
 @app.route("/delete/<int:employee_id>", methods=["POST"])
 @admin_required
@@ -677,6 +762,213 @@ def mark_attendance():
         url_for("attendance", date=attendance_date)
     )
 
+
+# ============================================================
+# EMPLOYEE LEAVE MANAGEMENT ROUTES
+# ============================================================
+
+@app.route("/leaves", methods=["GET"])
+@admin_required
+def leave_management():
+    conn = get_db_connection()
+
+    try:
+        employees = conn.execute(
+            """
+            SELECT id, name, department
+            FROM employees
+            ORDER BY name, id
+            """
+        ).fetchall()
+
+        leave_requests = conn.execute(
+            """
+            SELECT
+                l.id,
+                l.employee_id,
+                e.name AS employee_name,
+                e.department,
+                l.leave_type,
+                l.start_date,
+                l.end_date,
+                l.reason,
+                l.status,
+                l.created_at
+            FROM leave_requests AS l
+            JOIN employees AS e
+                ON e.id = l.employee_id
+            ORDER BY l.created_at DESC, l.id DESC
+            """
+        ).fetchall()
+
+    finally:
+        conn.close()
+
+    stats = {
+        "total": len(leave_requests),
+        "pending": sum(
+            row["status"] == "Pending"
+            for row in leave_requests
+        ),
+        "approved": sum(
+            row["status"] == "Approved"
+            for row in leave_requests
+        ),
+        "rejected": sum(
+            row["status"] == "Rejected"
+            for row in leave_requests
+        )
+    }
+
+    return render_template(
+        "leaves.html",
+        employees=employees,
+        leave_requests=leave_requests,
+        stats=stats
+    )
+
+
+# ============================================================
+# APPLY FOR EMPLOYEE LEAVE
+# ============================================================
+
+@app.route("/leaves/apply", methods=["POST"])
+@admin_required
+def apply_leave():
+    employee_id_text = request.form.get("employee_id", "").strip()
+    leave_type = request.form.get("leave_type", "").strip()
+    start_date_text = request.form.get("start_date", "").strip()
+    end_date_text = request.form.get("end_date", "").strip()
+    reason = request.form.get("reason", "").strip()
+
+    try:
+        employee_id = int(employee_id_text)
+
+        if employee_id <= 0:
+            raise ValueError("Invalid employee ID")
+
+        start = date.fromisoformat(start_date_text)
+        end = date.fromisoformat(end_date_text)
+
+    except ValueError:
+        flash("Invalid employee ID or leave dates.", "error")
+        return redirect(url_for("leave_management"))
+
+    if leave_type not in {"Sick", "Casual", "Earned"}:
+        flash("Please select a valid leave type.", "error")
+        return redirect(url_for("leave_management"))
+
+    if end < start:
+        flash("End date cannot be before start date.", "error")
+        return redirect(url_for("leave_management"))
+
+    if len(reason) > 500:
+        flash("Reason must be 500 characters or fewer.", "error")
+        return redirect(url_for("leave_management"))
+
+    conn = get_db_connection()
+
+    try:
+        employee = conn.execute(
+            "SELECT id FROM employees WHERE id = ?",
+            (employee_id,)
+        ).fetchone()
+
+        if employee is None:
+            flash("Employee not found.", "error")
+            return redirect(url_for("leave_management"))
+
+        conn.execute(
+            """
+            INSERT INTO leave_requests
+                (employee_id, leave_type, start_date, end_date, reason)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                employee_id,
+                leave_type,
+                start.isoformat(),
+                end.isoformat(),
+                reason
+            )
+        )
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
+
+    flash("Leave request submitted successfully.", "success")
+    return redirect(url_for("leave_management"))
+
+
+# ============================================================
+# APPROVE OR REJECT EMPLOYEE LEAVE
+# ============================================================
+
+@app.route("/leaves/<int:leave_id>/status", methods=["POST"])
+@admin_required
+def update_leave_status(leave_id):
+    new_status = request.form.get("status", "").strip()
+
+    if new_status not in {"Approved", "Rejected"}:
+        flash("Invalid leave approval status.", "error")
+        return redirect(url_for("leave_management"))
+
+    conn = get_db_connection()
+
+    try:
+        leave_request = conn.execute(
+            "SELECT id, status FROM leave_requests WHERE id = ?",
+            (leave_id,)
+        ).fetchone()
+
+        if leave_request is None:
+            flash("Leave request not found.", "error")
+            return redirect(url_for("leave_management"))
+
+        if leave_request["status"] != "Pending":
+            flash("Only pending leave requests can be updated.", "error")
+            return redirect(url_for("leave_management"))
+
+        # Atomic conditional update protects against concurrent approvals.
+        cursor = conn.execute(
+            """
+            UPDATE leave_requests
+            SET status = ?
+            WHERE id = ? AND status = 'Pending'
+            """,
+            (new_status, leave_id)
+        )
+
+        if cursor.rowcount != 1:
+            conn.rollback()
+            flash("Leave request was already updated.", "error")
+            return redirect(url_for("leave_management"))
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
+
+    flash(
+        f"Leave request {new_status.lower()} successfully.",
+        "success"
+    )
+    return redirect(url_for("leave_management"))
+
+
+# ============================================================
+# INITIALIZE DATABASE
+# ============================================================
 
 # Initialize database when Flask/Gunicorn imports this module
 init_db()
