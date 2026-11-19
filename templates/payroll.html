@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Payroll Management</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6fb;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 35px auto;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        h1 {
+            color: #1e293b;
+        }
+
+        .back-link {
+            background: #2563eb;
+            color: white;
+            text-decoration: none;
+            padding: 12px 18px;
+            border-radius: 8px;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin: 25px 0;
+        }
+
+        .card, .section {
+            background: white;
+            border-radius: 12px;
+            padding: 22px;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.06);
+        }
+
+        .card h3 {
+            margin-top: 0;
+            color: #64748b;
+            font-size: 15px;
+        }
+
+        .card h2 {
+            margin-bottom: 0;
+            color: #2563eb;
+        }
+
+        .section {
+            margin-bottom: 25px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fit, minmax(220px, 1fr));
+            gap: 18px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 7px;
+            font-weight: bold;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 11px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            font-size: 14px;
+        }
+
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 7px;
+            cursor: pointer;
+            margin-top: 18px;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        .payslip-link {
+            display: inline-block;
+            background: #0f766e;
+            color: white;
+            padding: 10px 12px;
+            border-radius: 7px;
+            text-decoration: none;
+            white-space: nowrap;
+            margin-top: 8px;
+        }
+
+        .payslip-link:hover {
+            background: #115e59;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            padding: 13px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th {
+            background: #eff6ff;
+        }
+
+        .status {
+            padding: 6px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .paid {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .flash {
+            padding: 12px;
+            margin: 15px 0;
+            border-radius: 7px;
+            background: #e0f2fe;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 20px;
+            color: #64748b;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="header">
+        <h1>Employee Payroll Management</h1>
+
+        <a href="{{ url_for('home') }}"
+           class="back-link">
+            Back to Dashboard
+        </a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+            <div class="flash">{{ message }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <div class="cards">
+
+        <div class="card">
+            <h3>Total Employees</h3>
+            <h2>{{ stats.total_employees }}</h2>
+        </div>
+
+        <div class="card">
+            <h3>Payroll Records</h3>
+            <h2>{{ stats.total_payrolls }}</h2>
+        </div>
+
+        <div class="card">
+            <h3>Paid Payrolls</h3>
+            <h2>{{ stats.paid }}</h2>
+        </div>
+
+        <div class="card">
+            <h3>Pending Payrolls</h3>
+            <h2>{{ stats.pending }}</h2>
+        </div>
+
+    </div>
+
+    <div class="section">
+
+        <h2>Employee Salary Configuration</h2>
+
+        <form method="POST"
+              action="{{ url_for('save_employee_salary') }}">
+
+            <input type="hidden"
+                   name="csrf_token"
+                   value="{{ csrf_token() }}">
+
+            <div class="form-grid">
+
+                <div>
+                    <label for="salary_employee">
+                        Select Employee
+                    </label>
+
+                    <select id="salary_employee"
+                            name="employee_id"
+                            required>
+                        <option value="">
+                            Select Employee
+                        </option>
+
+                        {% for employee in employees %}
+                            <option value="{{ employee.id }}">
+                                {{ employee.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="basic_salary">
+                        Basic Salary
+                    </label>
+
+                    <input id="basic_salary"
+                           type="number"
+                           name="basic_salary"
+                           min="0"
+                           step="0.01"
+                           required>
+                </div>
+
+                <div>
+                    <label for="hra">HRA</label>
+
+                    <input id="hra"
+                           type="number"
+                           name="hra"
+                           min="0"
+                           step="0.01"
+                           value="0"
+                           required>
+                </div>
+
+                <div>
+                    <label for="allowances">
+                        Allowances
+                    </label>
+
+                    <input id="allowances"
+                           type="number"
+                           name="allowances"
+                           min="0"
+                           step="0.01"
+                           value="0"
+                           required>
+                </div>
+
+                <div>
+                    <label for="deductions">
+                        Deductions
+                    </label>
+
+                    <input id="deductions"
+                           type="number"
+                           name="deductions"
+                           min="0"
+                           step="0.01"
+                           value="0"
+                           required>
+                </div>
+
+            </div>
+
+            <button type="submit">
+                Save Salary
+            </button>
+
+        </form>
+
+    </div>
+
+    <div class="section">
+
+        <h2>Generate Monthly Payroll</h2>
+
+        <form method="POST"
+              action="{{ url_for('generate_payroll') }}">
+
+            <input type="hidden"
+                   name="csrf_token"
+                   value="{{ csrf_token() }}">
+
+            <div class="form-grid">
+
+                <div>
+                    <label for="payroll_employee">
+                        Select Employee
+                    </label>
+
+                    <select id="payroll_employee"
+                            name="employee_id"
+                            required>
+
+                        <option value="">
+                            Select Employee
+                        </option>
+
+                        {% for employee in employees %}
+                            <option value="{{ employee.id }}">
+                                {{ employee.name }}
+                            </option>
+                        {% endfor %}
+
+                    </select>
+                </div>
+
+                <div>
+                    <label for="payroll_month">
+                        Payroll Month
+                    </label>
+
+                    <input id="payroll_month"
+                           type="month"
+                           name="payroll_month"
+                           required>
+                </div>
+
+            </div>
+
+            <button type="submit">
+                Generate Payroll
+            </button>
+
+        </form>
+
+    </div>
+
+    <div class="section">
+
+        <h2>Payroll History</h2>
+
+        <div class="table-wrapper">
+
+            <table>
+
+                <thead>
+                    <tr>
+                        <th>Employee</th>
+                        <th>Month</th>
+                        <th>Basic</th>
+                        <th>HRA</th>
+                        <th>Allowances</th>
+                        <th>Deductions</th>
+                        <th>Net Salary</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for record in payroll_records %}
+
+                    <tr>
+                        <td>{{ record.employee_name }}</td>
+                        <td>{{ record.payroll_month }}</td>
+                        <td>₹{{ record.basic_salary }}</td>
+                        <td>₹{{ record.hra }}</td>
+                        <td>₹{{ record.allowances }}</td>
+                        <td>₹{{ record.deductions }}</td>
+                        <td>₹{{ record.net_salary }}</td>
+
+                        <td>
+                            <span class="status {{ record.payment_status | lower }}">
+                                {{ record.payment_status }}
+                            </span>
+                        </td>
+
+                        <td>
+
+                            <a class="payslip-link"
+                               href="{{ url_for('download_payslip', payroll_id=record.id) }}">
+                                Download Payslip
+                            </a>
+
+                            {% if record.payment_status == 'Pending' %}
+
+                            <form method="POST"
+                                  action="{{ url_for('update_payroll_status', payroll_id=record.id) }}">
+
+                                <input type="hidden"
+                                       name="csrf_token"
+                                       value="{{ csrf_token() }}">
+
+                                <input type="hidden"
+                                       name="status"
+                                       value="Paid">
+
+                                <button type="submit">
+                                    Mark Paid
+                                </button>
+
+                            </form>
+
+                            {% else %}
+
+                                Paid
+
+                            {% endif %}
+
+                        </td>
+                    </tr>
+
+                    {% else %}
+
+                    <tr>
+                        <td colspan="9" class="empty">
+                            No payroll records available.
+                        </td>
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+</div>
+
+</body>
+</html>
