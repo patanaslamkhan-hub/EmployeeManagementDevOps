@@ -1,15 +1,18 @@
-
 import os
 import csv
 import sqlite3
 from io import StringIO
+from decimal import Decimal
 from functools import wraps
 from datetime import date
+
+from payroll import calculate_salary
+from payslip import generate_payslip_pdf
 
 from dotenv import load_dotenv
 from flask import (
     Flask, render_template, request, redirect,
-    url_for, session, flash, Response
+    url_for, session, flash, Response, send_file
 )
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -161,6 +164,41 @@ def init_db():
             )
         """)
 
+        # Payroll salary configuration (one record per employee)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS employee_salaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id INTEGER NOT NULL UNIQUE,
+                basic_salary NUMERIC NOT NULL DEFAULT 0 CHECK (basic_salary >= 0),
+                hra NUMERIC NOT NULL DEFAULT 0 CHECK (hra >= 0),
+                allowances NUMERIC NOT NULL DEFAULT 0 CHECK (allowances >= 0),
+                deductions NUMERIC NOT NULL DEFAULT 0 CHECK (deductions >= 0),
+                FOREIGN KEY (employee_id)
+                    REFERENCES employees(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Monthly payroll snapshot; amounts must be calculated by the app
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS payroll_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id INTEGER NOT NULL,
+                payroll_month TEXT NOT NULL,
+                basic_salary NUMERIC NOT NULL CHECK (basic_salary >= 0),
+                hra NUMERIC NOT NULL CHECK (hra >= 0),
+                allowances NUMERIC NOT NULL CHECK (allowances >= 0),
+                deductions NUMERIC NOT NULL CHECK (deductions >= 0),
+                net_salary NUMERIC NOT NULL CHECK (net_salary >= 0),
+                payment_status TEXT NOT NULL DEFAULT 'Pending'
+                    CHECK (payment_status IN ('Pending', 'Paid')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (employee_id, payroll_month),
+                CHECK (length(payroll_month) = 7 AND substr(payroll_month, 5, 1) = '-'),
+                FOREIGN KEY (employee_id)
+                    REFERENCES employees(id) ON DELETE CASCADE
+            )
+        """)
+
         # Create admin table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS admins (
@@ -291,6 +329,39 @@ def init_postgres_db():
                     CHECK (status IN ('Pending', 'Approved', 'Rejected')),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 CHECK (end_date >= start_date)
+            )
+        """)
+
+        # Payroll salary configuration (one record per employee)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS employee_salaries (
+                id BIGSERIAL PRIMARY KEY,
+                employee_id BIGINT NOT NULL UNIQUE
+                    REFERENCES employees(id) ON DELETE CASCADE,
+                basic_salary NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (basic_salary >= 0),
+                hra NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (hra >= 0),
+                allowances NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (allowances >= 0),
+                deductions NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (deductions >= 0)
+            )
+        """)
+
+        # Monthly payroll snapshot; amounts must be calculated by the app
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS payroll_records (
+                id BIGSERIAL PRIMARY KEY,
+                employee_id BIGINT NOT NULL
+                    REFERENCES employees(id) ON DELETE CASCADE,
+                payroll_month TEXT NOT NULL,
+                basic_salary NUMERIC(12, 2) NOT NULL CHECK (basic_salary >= 0),
+                hra NUMERIC(12, 2) NOT NULL CHECK (hra >= 0),
+                allowances NUMERIC(12, 2) NOT NULL CHECK (allowances >= 0),
+                deductions NUMERIC(12, 2) NOT NULL CHECK (deductions >= 0),
+                net_salary NUMERIC(12, 2) NOT NULL CHECK (net_salary >= 0),
+                payment_status TEXT NOT NULL DEFAULT 'Pending'
+                    CHECK (payment_status IN ('Pending', 'Paid')),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (employee_id, payroll_month),
+                CHECK (payroll_month ~ '^[0-9]{4}-(0[1-9]|1[0-2])$')
             )
         """)
 
@@ -964,6 +1035,243 @@ def update_leave_status(leave_id):
         "success"
     )
     return redirect(url_for("leave_management"))
+
+
+# ============================================================
+# EMPLOYEE PAYROLL MANAGEMENT ROUTES
+# ============================================================
+
+@app.route("/payroll", methods=["GET"])
+@admin_required
+def payroll_management():
+    conn = get_db_connection()
+    try:
+        employees = conn.execute(
+            "SELECT id, name, department FROM employees ORDER BY name, id"
+        ).fetchall()
+        payroll_records = conn.execute("""
+            SELECT p.id, p.employee_id, e.name AS employee_name,
+                   p.payroll_month, p.basic_salary, p.hra,
+                   p.allowances, p.deductions, p.net_salary,
+                   p.payment_status
+            FROM payroll_records AS p
+            JOIN employees AS e ON e.id = p.employee_id
+            ORDER BY p.payroll_month DESC, p.id DESC
+        """).fetchall()
+    finally:
+        conn.close()
+
+    stats = {
+        "total_employees": len(employees),
+        "total_payrolls": len(payroll_records),
+        "paid": sum(row["payment_status"] == "Paid" for row in payroll_records),
+        "pending": sum(row["payment_status"] == "Pending" for row in payroll_records),
+    }
+    return render_template(
+        "payroll.html", employees=employees,
+        payroll_records=payroll_records, stats=stats
+    )
+
+
+@app.route("/payroll/salary", methods=["POST"])
+@admin_required
+def save_employee_salary():
+    try:
+        employee_id = int(request.form.get("employee_id", ""))
+        if employee_id <= 0:
+            raise ValueError("Invalid employee ID.")
+        salary = calculate_salary(
+            request.form.get("basic_salary", ""),
+            request.form.get("hra", ""),
+            request.form.get("allowances", ""),
+            request.form.get("deductions", ""),
+        )
+    except (ValueError, TypeError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("payroll_management"))
+
+    conn = get_db_connection()
+    try:
+        employee = conn.execute(
+            "SELECT id FROM employees WHERE id = ?", (employee_id,)
+        ).fetchone()
+        if employee is None:
+            flash("Employee not found.", "error")
+            return redirect(url_for("payroll_management"))
+
+        conn.execute("""
+            INSERT INTO employee_salaries
+                (employee_id, basic_salary, hra, allowances, deductions)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (employee_id) DO UPDATE SET
+                basic_salary = excluded.basic_salary,
+                hra = excluded.hra,
+                allowances = excluded.allowances,
+                deductions = excluded.deductions
+        """, (
+            employee_id,
+            str(salary["basic_salary"]), str(salary["hra"]),
+            str(salary["allowances"]), str(salary["deductions"]),
+        ))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    flash("Employee salary saved successfully.", "success")
+    return redirect(url_for("payroll_management"))
+
+
+@app.route("/payroll/generate", methods=["POST"])
+@admin_required
+def generate_payroll():
+    try:
+        employee_id = int(request.form.get("employee_id", ""))
+        if employee_id <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        flash("Invalid employee ID.", "error")
+        return redirect(url_for("payroll_management"))
+
+    payroll_month = request.form.get("payroll_month", "").strip()
+    try:
+        if len(payroll_month) != 7 or payroll_month[4] != "-":
+            raise ValueError
+        year_text, month_text = payroll_month.split("-")
+        if not (year_text.isascii() and year_text.isdigit()
+                and month_text.isascii() and month_text.isdigit()
+                and len(year_text) == 4 and len(month_text) == 2):
+            raise ValueError
+        date(int(year_text), int(month_text), 1)
+    except ValueError:
+        flash("Please select a valid payroll month (YYYY-MM).", "error")
+        return redirect(url_for("payroll_management"))
+
+    conn = get_db_connection()
+    try:
+        salary_record = conn.execute("""
+            SELECT basic_salary, hra, allowances, deductions
+            FROM employee_salaries WHERE employee_id = ?
+        """, (employee_id,)).fetchone()
+        if salary_record is None:
+            flash("Configure this employee's salary first.", "error")
+            return redirect(url_for("payroll_management"))
+
+        existing = conn.execute("""
+            SELECT id FROM payroll_records
+            WHERE employee_id = ? AND payroll_month = ?
+        """, (employee_id, payroll_month)).fetchone()
+        if existing is not None:
+            flash("Payroll already exists for this employee and month.", "error")
+            return redirect(url_for("payroll_management"))
+
+        try:
+            salary = calculate_salary(
+                salary_record["basic_salary"], salary_record["hra"],
+                salary_record["allowances"], salary_record["deductions"],
+            )
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("payroll_management"))
+
+        # The unique database constraint also prevents concurrent duplicates.
+        cursor = conn.execute("""
+            INSERT INTO payroll_records
+                (employee_id, payroll_month, basic_salary, hra,
+                 allowances, deductions, net_salary)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (employee_id, payroll_month) DO NOTHING
+        """, (
+            employee_id, payroll_month,
+            str(salary["basic_salary"]), str(salary["hra"]),
+            str(salary["allowances"]), str(salary["deductions"]),
+            str(salary["net_salary"]),
+        ))
+        if cursor.rowcount != 1:
+            conn.rollback()
+            flash("Payroll already exists for this employee and month.", "error")
+            return redirect(url_for("payroll_management"))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    flash("Monthly payroll generated successfully.", "success")
+    return redirect(url_for("payroll_management"))
+
+
+@app.route("/payroll/<int:payroll_id>/status", methods=["POST"])
+@admin_required
+def update_payroll_status(payroll_id):
+    if request.form.get("status", "").strip() != "Paid":
+        flash("Invalid payroll payment status.", "error")
+        return redirect(url_for("payroll_management"))
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute("""
+            UPDATE payroll_records SET payment_status = 'Paid'
+            WHERE id = ? AND payment_status = 'Pending'
+        """, (payroll_id,))
+        if cursor.rowcount != 1:
+            conn.rollback()
+            flash("Pending payroll record not found.", "error")
+            return redirect(url_for("payroll_management"))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    flash("Payroll marked as paid.", "success")
+    return redirect(url_for("payroll_management"))
+
+
+# ============================================================
+# DOWNLOAD EMPLOYEE PAYSLIP (ADMIN ONLY)
+# ============================================================
+
+@app.route("/payroll/<int:payroll_id>/payslip", methods=["GET"])
+@admin_required
+def download_payslip(payroll_id):
+    conn = get_db_connection()
+    try:
+        record = conn.execute("""
+            SELECT p.id, p.payroll_month, p.basic_salary, p.hra,
+                   p.allowances, p.deductions, p.net_salary,
+                   p.payment_status, e.name AS employee_name
+            FROM payroll_records AS p
+            JOIN employees AS e ON e.id = p.employee_id
+            WHERE p.id = ?
+        """, (payroll_id,)).fetchone()
+    finally:
+        conn.close()
+
+    if record is None:
+        return "Payroll record not found", 404
+
+    payroll = dict(record)
+    payroll["gross_salary"] = sum(
+        (Decimal(str(payroll[field])) for field in
+         ("basic_salary", "hra", "allowances")),
+        Decimal("0.00")
+    )
+    pdf = generate_payslip_pdf(payroll)
+    filename = f"payslip_{payroll_id}_{payroll['payroll_month']}.pdf"
+    response = send_file(
+        pdf,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 # ============================================================
