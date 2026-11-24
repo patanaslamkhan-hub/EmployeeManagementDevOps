@@ -4,7 +4,7 @@ import sqlite3
 from io import StringIO
 from decimal import Decimal
 from functools import wraps
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from payroll import calculate_salary
 from payslip import generate_payslip_pdf
@@ -16,12 +16,30 @@ from flask import (
 )
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 
 # Load local environment variables
 load_dotenv()
 
 app = Flask(__name__)
+
+# Trusted reverse proxy configuration
+trusted_proxy_count = int(
+    os.environ.get("TRUSTED_PROXY_COUNT", "0")
+)
+
+
+if trusted_proxy_count > 0:
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=trusted_proxy_count,
+        x_proto=0
+    )
+
+
 
 
 # ============================================================
@@ -43,9 +61,43 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = (
     os.environ.get("COOKIE_SECURE", "false").lower() == "true"
 )
+# Administrator session inactivity timeout
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
 
+
+@app.before_request
+def enforce_admin_session_timeout():
+    if "admin_id" not in session:
+        return
+
+    now = datetime.now(timezone.utc)
+    last_activity = session.get("last_activity")
+
+    if last_activity is not None:
+        try:
+            last_seen = datetime.fromisoformat(last_activity)
+
+            if last_seen.tzinfo is None:
+                raise ValueError("Missing timezone")
+
+            if now - last_seen > timedelta(minutes=30):
+                session.clear()
+                flash("Your session has expired. Please log in again.", "error")
+                return redirect(url_for("login"))
+
+        except (ValueError, TypeError):
+            session.clear()
+            return redirect(url_for("login"))
+
+    session["last_activity"] = now.isoformat()
 csrf = CSRFProtect(app)
-
+# Rate limiting for administrator login
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri=os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
+)
 
 # ============================================================
 # DATABASE CONFIGURATION
@@ -423,8 +475,29 @@ def admin_required(view_function):
     return decorated_function
 
 
+
+# Username-based login rate limiting
+def login_username_key():
+    username = request.form.get("username", "").strip().lower()
+    return "admin-login:" + username[:150]
+
+
 @app.route("/login", methods=["GET", "POST"])
+
+@limiter.limit(
+    os.environ.get("LOGIN_IP_RATE_LIMIT", "5 per minute"),
+    methods=["POST"]
+)
+
+
+@limiter.limit(
+    os.environ.get("LOGIN_USERNAME_RATE_LIMIT", "5 per minute"),
+    key_func=login_username_key,
+    methods=["POST"]
+)
+
 def login():
+
     if "admin_id" in session:
         return redirect(url_for("home"))
 
@@ -448,6 +521,7 @@ def login():
             session.clear()
             session["admin_id"] = admin["id"]
             session["admin_username"] = admin["username"]
+            session["last_activity"] = datetime.now(timezone.utc).isoformat()
 
             return redirect(url_for("home"))
 
