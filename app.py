@@ -475,9 +475,29 @@ def admin_required(view_function):
     return decorated_function
 
 
+
+# Username-based login rate limiting
+def login_username_key():
+    username = request.form.get("username", "").strip().lower()
+    return "admin-login:" + username[:150]
+
+
 @app.route("/login", methods=["GET", "POST"])
-@limiter.limit("5 per minute", methods=["POST"])
+
+@limiter.limit(
+    os.environ.get("LOGIN_IP_RATE_LIMIT", "5 per minute"),
+    methods=["POST"]
+)
+
+
+@limiter.limit(
+    os.environ.get("LOGIN_USERNAME_RATE_LIMIT", "5 per minute"),
+    key_func=login_username_key,
+    methods=["POST"]
+)
+
 def login():
+
     if "admin_id" in session:
         return redirect(url_for("home"))
 

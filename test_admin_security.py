@@ -76,3 +76,63 @@ def test_login_rate_limit(tmp_path, monkeypatch):
 
     assert 429 not in responses[:5]
     assert responses[5] == 429
+
+
+@pytest.mark.rate_limit
+def test_username_rate_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        app_module,
+        "DATABASE",
+        str(tmp_path / "username_rate_limit_test.db")
+    )
+
+    app_module.init_db()
+
+    app_module.app.config.update(
+        TESTING=True,
+        WTF_CSRF_ENABLED=False
+    )
+
+    client = app_module.app.test_client()
+
+    usernames = [
+        "security_test_user",
+        "SECURITY_TEST_USER",
+        " Security_Test_User ",
+        "security_test_user",
+        "SECURITY_TEST_USER",
+        "security_test_user"
+    ]
+
+    responses = []
+
+    for index, username in enumerate(usernames):
+        response = client.post(
+            "/login",
+            data={
+                "username": username,
+                "password": "invalid_password"
+            },
+            environ_overrides={
+                "REMOTE_ADDR": f"198.51.100.{index + 1}"
+            }
+        )
+
+        responses.append(response.status_code)
+
+    assert responses[:5] == [200] * 5
+    assert responses[5] == 429
+
+    # A different username should have an independent limit.
+    response = client.post(
+        "/login",
+        data={
+            "username": "another_security_test_user",
+            "password": "invalid_password"
+        },
+        environ_overrides={
+            "REMOTE_ADDR": "198.51.100.7"
+        }
+    )
+
+    assert response.status_code == 200
