@@ -31,11 +31,14 @@ trusted_proxy_count = int(
     os.environ.get("TRUSTED_PROXY_COUNT", "0")
 )
 
+
 if trusted_proxy_count > 0:
     app.wsgi_app = ProxyFix(
         app.wsgi_app,
-        x_for=trusted_proxy_count
+        x_for=trusted_proxy_count,
+        x_proto=0
     )
+
 
 
 
