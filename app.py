@@ -16,6 +16,7 @@ from flask import (
 )
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
@@ -24,6 +25,18 @@ from flask_limiter.util import get_remote_address
 load_dotenv()
 
 app = Flask(__name__)
+
+# Trusted reverse proxy configuration
+trusted_proxy_count = int(
+    os.environ.get("TRUSTED_PROXY_COUNT", "0")
+)
+
+if trusted_proxy_count > 0:
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=trusted_proxy_count
+    )
+
 
 
 # ============================================================
