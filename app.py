@@ -99,6 +99,31 @@ limiter = Limiter(
     storage_uri=os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
 )
 
+# Verify rate-limiter storage backend at startup
+try:
+    storage = limiter.storage
+    backend_name = type(storage).__name__
+    storage_healthy = storage.check()
+
+    print(
+        f"[SECURITY] Rate limiter storage: {backend_name}",
+        flush=True
+    )
+
+    print(
+        f"[SECURITY] Storage connectivity: "
+        f"{'OK' if storage_healthy else 'FAILED'}",
+        flush=True
+    )
+
+except Exception as exc:
+    print(
+        f"[SECURITY] Storage verification failed: "
+        f"{type(exc).__name__}",
+        flush=True
+    )
+
+
 # ============================================================
 # DATABASE CONFIGURATION
 # ============================================================
